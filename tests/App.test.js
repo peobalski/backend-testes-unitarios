@@ -5,21 +5,16 @@ const app = require("../src/App");
 jest.mock("axios");
 
 describe("Cobertura total de erros e exceções", () => {
-
   beforeEach(() => jest.clearAllMocks());
-  // Caso 1: sucesso normal
+
+  //Caso de sucesso completo
   it("Deve retornar informações completas de um filme", async () => {
     axios.get
       .mockResolvedValueOnce({
-        // TMDb search
         data: { results: [{ id: 1, title: "Inception", release_date: "2010", overview: "Um filme sobre sonhos" }] },
       })
+      .mockResolvedValueOnce({ data: { imdb_id: "tt1375666" } })
       .mockResolvedValueOnce({
-        // TMDb external_ids
-        data: { imdb_id: "tt1375666" },
-      })
-      .mockResolvedValueOnce({
-        // OMDb
         data: {
           Response: "True",
           imdbRating: "8.8",
@@ -28,7 +23,6 @@ describe("Cobertura total de erros e exceções", () => {
         },
       })
       .mockResolvedValueOnce({
-        // YouTube trailer
         data: { items: [{ id: { videoId: "YoHD9XEInc0" } }] },
       });
 
@@ -40,7 +34,7 @@ describe("Cobertura total de erros e exceções", () => {
     expect(res.body.notasOMDb.imdb).toBe("8.8");
   });
 
-  // Caso 2: filme não encontrado no TMDb
+  //Filme não encontrado no TMDb
   it("Deve retornar erro se filme não for encontrado", async () => {
     axios.get.mockResolvedValueOnce({ data: { results: [] } });
 
@@ -50,7 +44,7 @@ describe("Cobertura total de erros e exceções", () => {
     expect(res.body.erro).toMatch(/não encontrado/i);
   });
 
-  // Caso 3: falha no TMDb (erro de rede)
+  //Erro no TMDb
   it("Deve capturar erro do TMDb", async () => {
     axios.get.mockRejectedValueOnce(new Error("TMDb Error"));
 
@@ -60,26 +54,24 @@ describe("Cobertura total de erros e exceções", () => {
     expect(res.body.erro).toBe("TMDb Error");
   });
 
-  // Caso 4: erro no OMDb
+  //Erro no OMDb
   it("Deve capturar erro do OMDb", async () => {
     axios.get
-      .mockResolvedValueOnce({
-        data: { results: [{ id: 1, title: "Inception", release_date: "2010" }] },
-      }) // TMDb search
-      .mockResolvedValueOnce({ data: { imdb_id: "tt1375666" } }) // TMDb external_ids
-      .mockRejectedValueOnce(new Error("OMDb Error")); // OMDb falha
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Teste", release_date: "2010" }] } })
+      .mockResolvedValueOnce({ data: { imdb_id: "tt1375666" } })
+      .mockRejectedValueOnce(new Error("OMDb Error"));
 
-    const res = await request(app).get("/api/filmes/Inception");
+    const res = await request(app).get("/api/filmes/Teste");
 
     expect(res.statusCode).toBe(500);
     expect(res.body.erro).toBe("OMDb Error");
   });
 
-  // Caso 5: erro no YouTube (trailer)
+  //Erro no YouTube
   it("Deve capturar erro ao buscar trailer no YouTube", async () => {
     axios.get
-      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Inception", release_date: "2010" }] } }) // TMDb search
-      .mockResolvedValueOnce({ data: { imdb_id: "tt1375666" } }) // TMDb external_ids
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Inception", release_date: "2010" }] } })
+      .mockResolvedValueOnce({ data: { imdb_id: "tt1375666" } })
       .mockResolvedValueOnce({
         data: {
           Response: "True",
@@ -87,17 +79,70 @@ describe("Cobertura total de erros e exceções", () => {
           Ratings: [],
           Metascore: "70",
         },
-      }) // OMDb
-      .mockRejectedValueOnce(new Error("YouTube Error")); // YouTube falha
+      })
+      .mockRejectedValueOnce(new Error("YouTube Error"));
 
     const res = await request(app).get("/api/filmes/Inception");
 
-    // Como YouTube é tratado com try/catch, retorna 200 e trailer null
     expect(res.statusCode).toBe(200);
     expect(res.body.trailer).toBeNull();
   });
 
-  // Endpoint de erro proposital
+  //OMDb Response = "False"
+  it("Deve retornar notas como null quando OMDb responder False", async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Teste" }] } })
+      .mockResolvedValueOnce({ data: { imdb_id: "tt0000001" } })
+      .mockResolvedValueOnce({
+        data: {
+          Response: "False",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { items: [] },
+      });
+
+    const res = await request(app).get("/api/filmes/Teste");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.notasOMDb).toBeNull();
+  });
+
+  //imdbId ausente (null)
+  it("Deve retornar notas como null quando imdbId for nulo", async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Teste" }] } })
+      .mockResolvedValueOnce({ data: { imdb_id: null } }) // SEM imdbId
+      .mockResolvedValueOnce({ data: { items: [] } }); // YouTube
+
+    const res = await request(app).get("/api/filmes/Teste");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.notasOMDb).toBeNull();
+  });
+
+  //YouTube sem vídeo (items = [])
+  it("Deve retornar trailer null quando YouTube não retornar vídeos", async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, title: "Teste" }] } })
+      .mockResolvedValueOnce({ data: { imdb_id: "tt0000001" } })
+      .mockResolvedValueOnce({
+        data: {
+          Response: "True",
+          imdbRating: "7.0",
+          Ratings: [],
+          Metascore: "60",
+        },
+      })
+      .mockResolvedValueOnce({ data: { items: [] } }); // YouTube -> vazio
+
+    const res = await request(app).get("/api/filmes/Teste");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.trailer).toBeNull();
+  });
+
+  //Endpoint de erro proposital
   it("Deve retornar erro tratado no /api/teste-erro", async () => {
     const res = await request(app).get("/api/teste-erro");
 
@@ -105,7 +150,7 @@ describe("Cobertura total de erros e exceções", () => {
     expect(res.body.mensagem).toBe("Erro tratado com sucesso");
   });
 
-  // Endpoint de status da API
+  // Status da API
   it("Deve retornar status da API", async () => {
     const res = await request(app).get("/api/status");
 
